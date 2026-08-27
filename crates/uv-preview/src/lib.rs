@@ -344,6 +344,8 @@ pub enum PreviewFeature {
     MinimumLibcVersion,
     /// Checks build dependencies before nonisolated builds with `uv build`.
     BuildDependencyCheck,
+    /// Allows requiring hashes for build dependencies.
+    BuildDependencyHashes,
 }
 
 impl Display for PreviewFeature {

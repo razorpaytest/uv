@@ -3816,6 +3816,7 @@ fn preview_features() {
     +            BatchExport,
     +            MinimumLibcVersion,
     +            BuildDependencyCheck,
+    +            BuildDependencyHashes,
     +        ],
          },
          python_preference: Managed,
