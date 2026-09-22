@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use serde::de::IntoDeserializer;
 
 use uv_distribution_types::{
-    NameRequirementSpecification, Requirement, RequirementSource, ResolutionUsage,
+    NameRequirementSpecification, Requirement, RequirementSource, ResolutionRecorder,
 };
 use uv_normalize::PackageName;
 use uv_pep440::Version;
@@ -152,7 +152,7 @@ pub struct ScopedConstraintSourceError {
 /// A set of constraints for a set of requirements.
 #[derive(Debug, Default, Clone)]
 pub struct Constraints {
-    usage: ResolutionUsage,
+    recorder: ResolutionRecorder,
     /// Original declarations, including hashes, for hash verification.
     specifications: Vec<NameRequirementSpecification>,
     /// Constraints grouped by package name.
@@ -163,8 +163,8 @@ pub struct Constraints {
 impl Constraints {
     /// Record configuration consultations in the given runtime resolution.
     #[must_use]
-    pub fn with_usage(mut self, usage: ResolutionUsage) -> Self {
-        self.usage = usage;
+    pub fn with_recorder(mut self, recorder: ResolutionRecorder) -> Self {
+        self.recorder = recorder;
         self
     }
 
@@ -198,7 +198,7 @@ impl Constraints {
                 });
         }
         Self {
-            usage: ResolutionUsage::default(),
+            recorder: ResolutionRecorder::default(),
             specifications,
             requirements: constraints,
             scoped: FxHashMap::default(),
@@ -217,7 +217,7 @@ impl Constraints {
 
     /// Get the constraints for a package.
     pub fn get(&self, name: &PackageName) -> Option<&Vec<Requirement>> {
-        self.usage.requirement(name);
+        self.recorder.requirement(name);
         self.requirements.get(name)
     }
 
@@ -279,7 +279,7 @@ impl Constraints {
         name: &PackageName,
     ) -> impl Iterator<Item = &'a Requirement> + use<'a> {
         if let Some((name, _)) = package {
-            self.usage.package(name);
+            self.recorder.package(name);
         }
         let package = package.map(|(name, version)| (name.clone(), version.clone()));
         self.get(name).into_iter().flatten().chain(
@@ -327,7 +327,7 @@ impl Constraints {
         I: IntoIterator<Item = Cow<'a, Requirement>>,
     {
         if let Some((name, _)) = package {
-            self.usage.package(name);
+            self.recorder.package(name);
         }
         let package = package.map(|(name, version)| (name.clone(), version.clone()));
         requirements.into_iter().flat_map(move |requirement| {
