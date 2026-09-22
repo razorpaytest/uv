@@ -44030,7 +44030,8 @@ fn lock_project_with_scoped_constraint_prerelease() -> Result<()> {
 fn lock_resolution_inputs_prune_unused_inputs() -> Result<()> {
     let context = uv_test::test_context!("3.12");
     let pyproject = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "1.0"
@@ -44056,8 +44057,7 @@ fn lock_resolution_inputs_prune_unused_inputs() -> Result<()> {
         [tool.uv.exclude-newer-package]
         unused = "2020-01-01T00:00:00Z"
         excluded = "2020-01-01T00:00:00Z"
-    "#};
-    pyproject.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--offline"), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -44086,12 +44086,33 @@ fn lock_resolution_inputs_prune_unused_inputs() -> Result<()> {
     });
 
     // Unrelated entries and unconsulted cutoffs can change independently.
-    pyproject.write_str(
-        &project
-            .replace("unused", "other")
-            .replace("absent", "other-parent")
-            .replace("2020-01-01", "2021-01-01"),
-    )?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["excluded"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "other>=1",
+            { package = { name = "other-parent" }, dependencies = ["other>=2"] },
+        ]
+        override-dependencies = [
+            "other==1",
+            { package = { name = "other-parent" }, dependencies = ["other==2"] },
+        ]
+        exclude-dependencies = [
+            "excluded", "other",
+            { package = { name = "other-parent" }, dependencies = ["other"] },
+        ]
+        dependency-metadata = [{ name = "other", version = "1" }]
+
+        [tool.uv.exclude-newer-package]
+        other = "2021-01-01T00:00:00Z"
+        excluded = "2021-01-01T00:00:00Z"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline").arg("--no-cache").arg("--no-preview"), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -44099,7 +44120,33 @@ fn lock_resolution_inputs_prune_unused_inputs() -> Result<()> {
     ");
 
     // Removing a rule that filtered out a dependency must invalidate the lock.
-    pyproject.write_str(&project.replace("\"excluded\", \"unused\"", "\"unused\""))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["excluded"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "unused>=1",
+            { package = { name = "absent" }, dependencies = ["unused>=2"] },
+        ]
+        override-dependencies = [
+            "unused==1",
+            { package = { name = "absent" }, dependencies = ["unused==2"] },
+        ]
+        exclude-dependencies = [
+            "unused",
+            { package = { name = "absent" }, dependencies = ["unused"] },
+        ]
+        dependency-metadata = [{ name = "unused", version = "1" }]
+
+        [tool.uv.exclude-newer-package]
+        unused = "2020-01-01T00:00:00Z"
+        excluded = "2020-01-01T00:00:00Z"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44125,7 +44172,9 @@ fn lock_resolution_inputs_shadowed_override() -> Result<()> {
     "#})?;
     let server = PackseServer::from_scenario(&scenario);
     let context = uv_test::test_context!("3.12");
-    let project = indoc! {r#"
+
+    let pyproject = context.temp_dir.child("pyproject.toml");
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "1.0"
@@ -44138,9 +44187,7 @@ fn lock_resolution_inputs_shadowed_override() -> Result<()> {
             "child==9",
             { package = { name = "project" }, dependencies = ["child==1"] },
         ]
-    "#};
-    let pyproject = context.temp_dir.child("pyproject.toml");
-    pyproject.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--index-url").arg(server.index_url()), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -44152,7 +44199,20 @@ fn lock_resolution_inputs_shadowed_override() -> Result<()> {
     Resolved 2 packages in [TIME]
     ");
 
-    pyproject.write_str(&project.replace("child==9", "child==8"))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["child"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        override-dependencies = [
+            "child==8",
+            { package = { name = "project" }, dependencies = ["child==1"] },
+        ]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44170,7 +44230,17 @@ fn lock_resolution_inputs_shadowed_override() -> Result<()> {
 fn lock_resolution_inputs_new_exclusion() -> Result<()> {
     let context = uv_test::test_context!("3.12");
     let pyproject = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    context
+        .temp_dir
+        .child("child/pyproject.toml")
+        .write_str(indoc! {r#"
+        [project]
+        name = "child"
+        version = "1.0"
+        dependencies = []
+    "#})?;
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "1.0"
@@ -44182,17 +44252,7 @@ fn lock_resolution_inputs_new_exclusion() -> Result<()> {
 
         [tool.uv.sources]
         child = { path = "child" }
-    "#};
-    context
-        .temp_dir
-        .child("child/pyproject.toml")
-        .write_str(indoc! {r#"
-        [project]
-        name = "child"
-        version = "1.0"
-        dependencies = []
     "#})?;
-    pyproject.write_str(project)?;
     uv_snapshot!(context.filters(), context.lock().arg("--offline"), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -44226,13 +44286,21 @@ fn lock_resolution_inputs_new_exclusion() -> Result<()> {
     });
 
     // A new exclusion removes a previously resolved package.
-    pyproject.write_str(&project.replace(
-        "[tool.uv]",
-        indoc! {r#"
-            [tool.uv]
-            exclude-dependencies = ["child"]
-        "#},
-    ))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["child"]
+
+        [tool.uv]
+        exclude-dependencies = ["child"]
+
+        preview-features = ["resolution-inputs"]
+
+        [tool.uv.sources]
+        child = { path = "child" }
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44263,7 +44331,8 @@ fn lock_resolution_inputs_empty_scopes() -> Result<()> {
             .map(|(filename, hash)| (hash.to_owned(), format!("[SHA256:{filename}]"))),
     );
     let pyproject = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "1.0"
@@ -44280,8 +44349,7 @@ fn lock_resolution_inputs_empty_scopes() -> Result<()> {
             { package = { name = "project" }, dependencies = ["child"] },
             { package = { name = "project", version = "1.0" }, dependencies = [] },
         ]
-    "#};
-    pyproject.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--index-url").arg(server.index_url()), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -44333,11 +44401,24 @@ fn lock_resolution_inputs_empty_scopes() -> Result<()> {
     ");
 
     // An added dependency in the previously empty override is immediately relevant.
-    pyproject.write_str(&project.replacen(
-        r#"version = "1.0" }, dependencies = []"#,
-        r#"version = "1.0" }, dependencies = ["child>=1"]"#,
-        1,
-    ))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["child"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        override-dependencies = [
+            { package = { name = "project" }, dependencies = ["child==2"] },
+            { package = { name = "project", version = "1.0" }, dependencies = ["child>=1"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "project" }, dependencies = ["child"] },
+            { package = { name = "project", version = "1.0" }, dependencies = [] },
+        ]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44355,7 +44436,8 @@ fn lock_resolution_inputs_empty_scopes() -> Result<()> {
 fn lock_resolution_inputs_legacy_locks() -> Result<()> {
     let context = uv_test::test_context!("3.12");
     let pyproject = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "1.0"
@@ -44364,14 +44446,22 @@ fn lock_resolution_inputs_legacy_locks() -> Result<()> {
 
         [tool.uv]
         constraint-dependencies = ["unused>=1"]
-    "#};
-    pyproject.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--offline").arg("--no-preview"), @"
     exit_code: 0 (success)
     ----- stderr -----
     Resolved 1 package in [TIME]
     ");
-    pyproject.write_str(&project.replace("unused>=1", "unused>=2"))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = []
+
+        [tool.uv]
+        constraint-dependencies = ["unused>=2"]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline").arg("--preview-features=resolution-inputs"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44479,7 +44569,8 @@ fn lock_resolution_inputs_ignores_build_dependencies() -> Result<()> {
 fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     let context = uv_test::test_context!("3.12");
     let pyproject_toml = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject_toml.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "0.1.0"
@@ -44506,8 +44597,7 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
 
         [[tool.uv.dependency-metadata]]
         name = "sniffio"
-    "#};
-    pyproject_toml.write_str(project)?;
+    "#})?;
 
     uv_snapshot!(context.filters(), context.lock(), @"
     exit_code: 0 (success)
@@ -44538,8 +44628,35 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     ");
 
     // Adding a dependency invalidates the lock and makes its metadata relevant.
-    let project = project.replace("dependencies = []", "dependencies = [\"anyio==3.7.0\"]");
-    pyproject_toml.write_str(&project)?;
+
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.7.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.6.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.6"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44606,7 +44723,34 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     ");
 
     // Changing metadata for an unrelated package does not invalidate the lock.
-    pyproject_toml.write_str(&project.replace("version = \"3.6\"", "version = \"3.5\""))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.7.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.6.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.5"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -44614,7 +44758,34 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     ");
 
     // Other versions and the shadowed fallback participate in the package-level comparison.
-    pyproject_toml.write_str(&project.replace("version = \"3.6.0\"", "version = \"3.5.0\""))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.7.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.5.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.6"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44623,17 +44794,35 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
 
     hint: To update the lockfile, run `uv lock`.
     ");
-    pyproject_toml.write_str(&project.replace(
-        indoc! {r#"
-            name = "anyio"
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
 
-        "#},
-        indoc! {r#"
-            name = "anyio"
-            requires-dist = ["unused"]
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
 
-        "#},
-    ))?;
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.7.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.6.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        requires-dist = ["unused"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.6"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44644,16 +44833,31 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     ");
 
     // Removing the exact entry activates the fallback and invalidates the lock.
-    let fallback = project.replace(
-        indoc! {r#"
-            [[tool.uv.dependency-metadata]]
-            name = "anyio"
-            version = "3.7.0"
 
-        "#},
-        "",
-    );
-    pyproject_toml.write_str(&fallback)?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.6.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.6"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44674,7 +44878,34 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     ");
 
     // Adding an exact entry that shadows the recorded fallback also invalidates the lock.
-    pyproject_toml.write_str(&project)?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.7.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.6.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.6"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44690,13 +44921,35 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
     ");
 
     // Changes to relevant metadata still invalidate the lock.
-    pyproject_toml.write_str(&project.replace(
-        r#"version = "3.7.0""#,
-        indoc! {r#"
-            version = "3.7.0"
-            requires-dist = ["iniconfig"]
-        "#},
-    ))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["anyio==3.7.0"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.7.0"
+        requires-dist = ["iniconfig"]
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+        version = "3.6.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "anyio"
+
+        [[tool.uv.dependency-metadata]]
+        name = "idna"
+        version = "3.6"
+
+        [[tool.uv.dependency-metadata]]
+        name = "sniffio"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44715,7 +44968,8 @@ fn lock_resolution_inputs_metadata_precedence() -> Result<()> {
 fn lock_resolution_inputs_candidate_policy_override() -> Result<()> {
     let context = uv_test::test_context!("3.12").with_exclude_newer("2026-01-01T00:00:00Z");
     let pyproject_toml = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject_toml.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "0.1.0"
@@ -44730,8 +44984,7 @@ fn lock_resolution_inputs_candidate_policy_override() -> Result<()> {
         exclude-dependencies = [
             { package = { name = "absent" }, dependencies = ["numpy"] },
         ]
-    "#};
-    pyproject_toml.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.tree(), @"
     exit_code: 0 (success)
     ----- stdout -----
@@ -44748,8 +45001,22 @@ fn lock_resolution_inputs_candidate_policy_override() -> Result<()> {
     ");
 
     // Removing the exclusion allows the scoped declaration to opt NumPy into prereleases.
-    pyproject_toml
-        .write_str(&project.replace("dependencies = [\"numpy\"]", "dependencies = []"))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12,<3.13"
+        dependencies = ["numpy>=2.3"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        override-dependencies = [
+            { package = { name = "absent" }, dependencies = ["numpy==2.4.0rc1"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "absent" }, dependencies = [] },
+        ]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44760,7 +45027,22 @@ fn lock_resolution_inputs_candidate_policy_override() -> Result<()> {
     ");
 
     // Retain a previously relevant scope during validation even if its new dependency is absent.
-    pyproject_toml.write_str(&project.replace("numpy==2.4.0rc1", "unrelated==1.0"))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12,<3.13"
+        dependencies = ["numpy>=2.3"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        override-dependencies = [
+            { package = { name = "absent" }, dependencies = ["unrelated==1.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "absent" }, dependencies = ["numpy"] },
+        ]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44778,7 +45060,8 @@ fn lock_resolution_inputs_candidate_policy_override() -> Result<()> {
 fn lock_resolution_inputs_candidate_policy_constraint() -> Result<()> {
     let context = uv_test::test_context!("3.12").with_exclude_newer("2026-01-01T00:00:00Z");
     let pyproject_toml = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject_toml.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "0.1.0"
@@ -44793,8 +45076,7 @@ fn lock_resolution_inputs_candidate_policy_constraint() -> Result<()> {
         exclude-dependencies = [
             { package = { name = "absent" }, dependencies = ["numpy"] },
         ]
-    "#};
-    pyproject_toml.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.tree(), @"
     exit_code: 0 (success)
     ----- stdout -----
@@ -44811,8 +45093,22 @@ fn lock_resolution_inputs_candidate_policy_constraint() -> Result<()> {
     ");
 
     // Removing the exclusion allows the scoped declaration to opt NumPy into prereleases.
-    pyproject_toml
-        .write_str(&project.replace("dependencies = [\"numpy\"]", "dependencies = []"))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12,<3.13"
+        dependencies = ["numpy>=2.3"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            { package = { name = "absent" }, dependencies = ["numpy==2.4.0rc1"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "absent" }, dependencies = [] },
+        ]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44823,7 +45119,22 @@ fn lock_resolution_inputs_candidate_policy_constraint() -> Result<()> {
     ");
 
     // Retain a previously relevant scope during validation even if its new dependency is absent.
-    pyproject_toml.write_str(&project.replace("numpy==2.4.0rc1", "unrelated==1.0"))?;
+    pyproject_toml.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12,<3.13"
+        dependencies = ["numpy>=2.3"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            { package = { name = "absent" }, dependencies = ["unrelated==1.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "absent" }, dependencies = ["numpy"] },
+        ]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked"), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44863,7 +45174,8 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
             .map(|(filename, hash)| (hash.to_owned(), format!("[SHA256:{filename}]"))),
     );
     let pyproject = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "1.0"
@@ -44884,8 +45196,7 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
         ]
         exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
         dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
-    "#};
-    pyproject.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.tree().arg("--index-url").arg(server.index_url()), @"
     exit_code: 0 (success)
     ----- stdout -----
@@ -44988,7 +45299,28 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // A global constraint consulted during backtracking remains relevant.
-    pyproject.write_str(&project.replace("leaf>=2", "leaf>=1"))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=1",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -44999,7 +45331,28 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // Scoped constraints remain relevant even when the parent is absent from the final graph.
-    pyproject.write_str(&project.replace("leaf>=1", "leaf>=0"))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=0"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -45010,7 +45363,28 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // Scoped overrides for the discarded parent remain relevant.
-    pyproject.write_str(&project.replace("leaf==1.0.0", "leaf>=1.0.0"))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf>=1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -45021,8 +45395,28 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // Scoped exclusions for the discarded parent remain relevant.
-    pyproject
-        .write_str(&project.replace(r#"dependencies = ["unrelated"]"#, "dependencies = []"))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = [] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -45033,10 +45427,28 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // Metadata consulted for the discarded package remains relevant.
-    pyproject.write_str(&project.replace(
-        r#"requires-dist = ["leaf"]"#,
-        r#"requires-dist = ["leaf>=1"]"#,
-    ))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf>=1"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -45047,13 +45459,30 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // New metadata for a locked package invalidates the lock.
-    pyproject.write_str(&project.replace(
-        "dependency-metadata = [",
-        indoc! {r#"
-            dependency-metadata = [
-                { name = "a", version = "1.0.0" },
-        "#},
-    ))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [
+            { name = "a", version = "1.0.0" },
+        { name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -45063,8 +45492,29 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     hint: To update the lockfile, run `uv lock`.
     ");
 
-    // Upload cutoffs also retain consultations for packages absent from the final graph.
-    pyproject.write_str(&project.replace("2025-01-01", "2024-03-25"))?;
+    // Upload cutoffs consulted for packages absent from the final graph remain relevant.
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2024-03-25T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--index-url").arg(server.index_url()), @"
     exit_code: 1 (failure)
     ----- stderr -----
@@ -45076,13 +45526,30 @@ fn lock_resolution_inputs_backtracking() -> Result<()> {
     ");
 
     // An upgrade applies the previously ignored exclusion and selects the discarded branch.
-    pyproject.write_str(&project.replace(
-        "exclude-dependencies = [",
-        indoc! {r#"
-            exclude-dependencies = [
-                "leaf",
-        "#},
-    ))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "1.0"
+        requires-python = ">=3.12"
+        dependencies = ["a"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+        constraint-dependencies = [
+            "leaf>=2",
+            { package = { name = "discarded" }, dependencies = ["leaf>=1"] },
+        ]
+        override-dependencies = [
+            { package = { name = "discarded" }, dependencies = ["leaf==1.0.0"] },
+        ]
+        exclude-dependencies = [
+            "leaf",
+
+            { package = { name = "discarded" }, dependencies = ["unrelated"] },
+        ]
+        exclude-newer-package = { discarded = "2025-01-01T00:00:00Z" }
+        dependency-metadata = [{ name = "discarded", version = "1.0.0", requires-dist = ["leaf"] }]
+    "#})?;
     uv_snapshot!(context.filters(), context.tree().arg("--upgrade").arg("--index-url").arg(server.index_url()), @"
     exit_code: 0 (success)
     ----- stdout -----
@@ -45109,7 +45576,8 @@ fn lock_resolution_inputs_metadata_unknown_version() -> Result<()> {
         version = "1.0"
     "#})?;
     let pyproject = context.temp_dir.child("pyproject.toml");
-    let project = indoc! {r#"
+
+    pyproject.write_str(indoc! {r#"
         [project]
         name = "project"
         version = "0.1.0"
@@ -45132,8 +45600,7 @@ fn lock_resolution_inputs_metadata_unknown_version() -> Result<()> {
 
         [[tool.uv.dependency-metadata]]
         name = "child"
-    "#};
-    pyproject.write_str(project)?;
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--offline"), @"
     exit_code: 0 (success)
     ----- stderr -----
@@ -45185,7 +45652,30 @@ fn lock_resolution_inputs_metadata_unknown_version() -> Result<()> {
     ");
 
     // Complete declarations participate in validation, even for an unmatched version.
-    pyproject.write_str(&project.replace("version = \"2.0\"", "version = \"3.0\""))?;
+    pyproject.write_str(indoc! {r#"
+        [project]
+        name = "project"
+        version = "0.1.0"
+        requires-python = ">=3.12"
+        dependencies = ["child"]
+
+        [tool.uv]
+        preview-features = ["resolution-inputs"]
+
+        [tool.uv.sources]
+        child = { path = "child" }
+
+        [[tool.uv.dependency-metadata]]
+        name = "child"
+        version = "1.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "child"
+        version = "3.0"
+
+        [[tool.uv.dependency-metadata]]
+        name = "child"
+    "#})?;
     uv_snapshot!(context.filters(), context.lock().arg("--locked").arg("--offline"), @"
     exit_code: 1 (failure)
     ----- stderr -----
