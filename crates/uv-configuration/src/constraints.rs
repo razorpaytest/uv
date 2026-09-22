@@ -152,7 +152,7 @@ pub struct ScopedConstraintSourceError {
 /// A set of constraints for a set of requirements.
 #[derive(Debug, Default, Clone)]
 pub struct Constraints {
-    recorder: ResolutionRecorder,
+    recorder: Option<ResolutionRecorder>,
     /// Original declarations, including hashes, for hash verification.
     specifications: Vec<NameRequirementSpecification>,
     /// Constraints grouped by package name.
@@ -163,7 +163,7 @@ pub struct Constraints {
 impl Constraints {
     /// Record configuration consultations in the given runtime resolution.
     #[must_use]
-    pub fn with_recorder(mut self, recorder: ResolutionRecorder) -> Self {
+    pub fn with_recorder(mut self, recorder: Option<ResolutionRecorder>) -> Self {
         self.recorder = recorder;
         self
     }
@@ -198,7 +198,7 @@ impl Constraints {
                 });
         }
         Self {
-            recorder: ResolutionRecorder::default(),
+            recorder: None,
             specifications,
             requirements: constraints,
             scoped: FxHashMap::default(),
@@ -217,7 +217,9 @@ impl Constraints {
 
     /// Get the constraints for a package.
     pub fn get(&self, name: &PackageName) -> Option<&Vec<Requirement>> {
-        self.recorder.requirement(name);
+        if let Some(recorder) = &self.recorder {
+            recorder.constraint(name);
+        }
         self.requirements.get(name)
     }
 
@@ -278,8 +280,10 @@ impl Constraints {
         package: Option<(&PackageName, &Version)>,
         name: &PackageName,
     ) -> impl Iterator<Item = &'a Requirement> + use<'a> {
-        if let Some((name, _)) = package {
-            self.recorder.package(name);
+        if let Some((name, _)) = package
+            && let Some(recorder) = &self.recorder
+        {
+            recorder.scoped_constraint(name);
         }
         let package = package.map(|(name, version)| (name.clone(), version.clone()));
         self.get(name).into_iter().flatten().chain(
@@ -326,8 +330,10 @@ impl Constraints {
     where
         I: IntoIterator<Item = Cow<'a, Requirement>>,
     {
-        if let Some((name, _)) = package {
-            self.recorder.package(name);
+        if let Some((name, _)) = package
+            && let Some(recorder) = &self.recorder
+        {
+            recorder.scoped_constraint(name);
         }
         let package = package.map(|(name, version)| (name.clone(), version.clone()));
         requirements.into_iter().flat_map(move |requirement| {
