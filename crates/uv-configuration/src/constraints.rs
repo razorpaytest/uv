@@ -3,7 +3,9 @@ use std::borrow::Cow;
 use rustc_hash::FxHashMap;
 use serde::de::IntoDeserializer;
 
-use uv_distribution_types::{NameRequirementSpecification, Requirement, RequirementSource};
+use uv_distribution_types::{
+    NameRequirementSpecification, Requirement, RequirementSource, ResolutionUsage,
+};
 use uv_normalize::PackageName;
 use uv_pep440::Version;
 
@@ -122,6 +124,11 @@ impl<T> From<T> for Constraint<T> {
 }
 
 impl PackageConstraintTarget {
+    /// Return the parent package selected by this scope.
+    pub fn name(&self) -> &PackageName {
+        &self.name
+    }
+
     /// Whether this selector applies to the given package version.
     fn matches(&self, name: &PackageName, version: Option<&Version>) -> bool {
         self.name == *name
@@ -145,6 +152,7 @@ pub struct ScopedConstraintSourceError {
 /// A set of constraints for a set of requirements.
 #[derive(Debug, Default, Clone)]
 pub struct Constraints {
+    usage: ResolutionUsage,
     /// Original declarations, including hashes, for hash verification.
     specifications: Vec<NameRequirementSpecification>,
     /// Constraints grouped by package name.
@@ -153,6 +161,13 @@ pub struct Constraints {
 }
 
 impl Constraints {
+    /// Record configuration consultations in the given runtime resolution.
+    #[must_use]
+    pub fn with_usage(mut self, usage: ResolutionUsage) -> Self {
+        self.usage = usage;
+        self
+    }
+
     /// Create a new set of constraints from a set of requirements.
     pub fn from_requirements(requirements: impl Iterator<Item = Requirement>) -> Self {
         Self::from_specifications(requirements.map(NameRequirementSpecification::from))
@@ -183,6 +198,7 @@ impl Constraints {
                 });
         }
         Self {
+            usage: ResolutionUsage::default(),
             specifications,
             requirements: constraints,
             scoped: FxHashMap::default(),
@@ -201,6 +217,7 @@ impl Constraints {
 
     /// Get the constraints for a package.
     pub fn get(&self, name: &PackageName) -> Option<&Vec<Requirement>> {
+        self.usage.requirement(name);
         self.requirements.get(name)
     }
 
@@ -261,6 +278,9 @@ impl Constraints {
         package: Option<(&PackageName, &Version)>,
         name: &PackageName,
     ) -> impl Iterator<Item = &'a Requirement> + use<'a> {
+        if let Some((name, _)) = package {
+            self.usage.package(name);
+        }
         let package = package.map(|(name, version)| (name.clone(), version.clone()));
         self.get(name).into_iter().flatten().chain(
             self.scoped
@@ -306,6 +326,9 @@ impl Constraints {
     where
         I: IntoIterator<Item = Cow<'a, Requirement>>,
     {
+        if let Some((name, _)) = package {
+            self.usage.package(name);
+        }
         let package = package.map(|(name, version)| (name.clone(), version.clone()));
         requirements.into_iter().flat_map(move |requirement| {
             let marker = requirement.marker;

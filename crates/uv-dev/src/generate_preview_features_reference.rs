@@ -152,6 +152,8 @@ mod tests {
         - `pylock`: Allows installing from `pylock.toml` files.
         - `python-install-default`: Allows [installing `python` and `python3` executables](./python-versions.md#installing-python-executables).
         - `relocatable-envs-default`: Creates relocatable virtual environments by default.
+        - `resolution-inputs`: Records runtime configuration consultations and omits unused constraints, overrides, exclusions,
+          dependency metadata, and package-specific upload cutoffs from the lockfile.
         - `s3-endpoint`: Allows signing requests to configured S3-compatible endpoints.
         - `sbom-export`: Allows using `uv export --format=cyclonedx1.5`.
         - `special-conda-env-names`: Stops treating Conda environments named `base` or `root` as special.
