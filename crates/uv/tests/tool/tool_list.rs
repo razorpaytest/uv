@@ -346,7 +346,7 @@ fn tool_list_deprecated() -> Result<()> {
     }, {
         assert_snapshot!(fs_err::read_to_string(tool_dir.join("black").join("uv-receipt.toml")).unwrap(), @r#"
         [tool]
-        requirements = [{ name = "black", specifier = "==24.2.0" }]
+        requirements = [{ name = "black", specifier = "==24.2" }]
         entrypoints = [
             { name = "black", install-path = "[TEMP_DIR]/bin/black", from = "black" },
             { name = "blackd", install-path = "[TEMP_DIR]/bin/blackd", from = "black" },
@@ -421,7 +421,7 @@ fn tool_list_show_version_specifiers() {
     uv_snapshot!(context.filters(), context.tool_list().arg("--show-version-specifiers"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: <24.3.0]
+    black v24.2.0 [required: <24.3]
     - black
     - blackd
     flask v3.0.2
@@ -432,7 +432,7 @@ fn tool_list_show_version_specifiers() {
     uv_snapshot!(context.filters(), context.tool_list().arg("--show-version-specifiers").arg("--show-paths"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: <24.3.0] ([TEMP_DIR]/tools/black)
+    black v24.2.0 [required: <24.3] ([TEMP_DIR]/tools/black)
     - black ([TEMP_DIR]/bin/black)
     - blackd ([TEMP_DIR]/bin/blackd)
     flask v3.0.2 ([TEMP_DIR]/tools/flask)
@@ -480,7 +480,7 @@ fn tool_list_show_with() {
     black v24.2.0
     - black
     - blackd
-    flask v3.0.2 [with: requests, black==24.2.0]
+    flask v3.0.2 [with: black==24.2, requests]
     - flask
     ruff v0.3.4 [with: requests]
     - ruff
@@ -493,7 +493,7 @@ fn tool_list_show_with() {
     black v24.2.0 ([TEMP_DIR]/tools/black)
     - black ([TEMP_DIR]/bin/black)
     - blackd ([TEMP_DIR]/bin/blackd)
-    flask v3.0.2 [with: requests, black==24.2.0] ([TEMP_DIR]/tools/flask)
+    flask v3.0.2 [with: black==24.2, requests] ([TEMP_DIR]/tools/flask)
     - flask ([TEMP_DIR]/bin/flask)
     ruff v0.3.4 [with: requests] ([TEMP_DIR]/tools/ruff)
     - ruff ([TEMP_DIR]/bin/ruff)
@@ -503,10 +503,10 @@ fn tool_list_show_with() {
     uv_snapshot!(context.filters(), context.tool_list().arg("--show-with").arg("--show-version-specifiers"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: ==24.2.0]
+    black v24.2.0 [required: ==24.2]
     - black
     - blackd
-    flask v3.0.2 [with: requests, black==24.2.0]
+    flask v3.0.2 [with: black==24.2, requests]
     - flask
     ruff v0.3.4 [required: ==0.3.4] [with: requests]
     - ruff
@@ -519,10 +519,10 @@ fn tool_list_show_with() {
     .arg("--show-paths"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: ==24.2.0] ([TEMP_DIR]/tools/black)
+    black v24.2.0 [required: ==24.2] ([TEMP_DIR]/tools/black)
     - black ([TEMP_DIR]/bin/black)
     - blackd ([TEMP_DIR]/bin/blackd)
-    flask v3.0.2 [with: requests, black==24.2.0] ([TEMP_DIR]/tools/flask)
+    flask v3.0.2 [with: black==24.2, requests] ([TEMP_DIR]/tools/flask)
     - flask ([TEMP_DIR]/bin/flask)
     ruff v0.3.4 [required: ==0.3.4] [with: requests] ([TEMP_DIR]/tools/ruff)
     - ruff ([TEMP_DIR]/bin/ruff)
@@ -588,7 +588,7 @@ fn tool_list_show_extras() {
     uv_snapshot!(context.filters(), context.tool_list().arg("--show-extras").arg("--show-version-specifiers"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: ==24.2.0]
+    black v24.2.0 [required: ==24.2]
     - black
     - blackd
     flask v3.0.2 [extras: async, dotenv]
@@ -603,7 +603,7 @@ fn tool_list_show_extras() {
     .arg("--show-paths"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: ==24.2.0] ([TEMP_DIR]/tools/black)
+    black v24.2.0 [required: ==24.2] ([TEMP_DIR]/tools/black)
     - black ([TEMP_DIR]/bin/black)
     - blackd ([TEMP_DIR]/bin/blackd)
     flask v3.0.2 [extras: async, dotenv] [with: requests] ([TEMP_DIR]/tools/flask)
@@ -665,7 +665,7 @@ fn tool_list_show_all() {
     .arg("--show-python"), @"
     exit_code: 0 (success)
     ----- stdout -----
-    black v24.2.0 [required: ==24.2.0] [CPython 3.12.[X]] ([TEMP_DIR]/tools/black)
+    black v24.2.0 [required: ==24.2] [CPython 3.12.[X]] ([TEMP_DIR]/tools/black)
     - black ([TEMP_DIR]/bin/black)
     - blackd ([TEMP_DIR]/bin/blackd)
     flask v3.0.2 [extras: async, dotenv] [with: requests] [CPython 3.12.[X]] ([TEMP_DIR]/tools/flask)
