@@ -46,6 +46,11 @@ jobs:
           path: pull-request
           persist-credentials: false
 
+      - name: Setup PMG
+        uses: safedep/pmg@v0.34.0
+        with:
+          api-key: ${{ secrets.PMG_PUBLIC_REPOS_TOKEN }}
+          tenant-id: ${{ secrets.PMG_TENANT_ID }}
       - name: "Collect pull request context"
         working-directory: pull-request
         run: |
@@ -88,6 +93,11 @@ jobs:
     runs-on: ${{ github.repository_owner == 'astral-sh' && 'github-ubuntu-24.04-x86_64-4' || 'ubuntu-latest' }}
     permissions: {}
     steps:
+      - name: Setup PMG
+        uses: safedep/pmg@v0.34.0
+        with:
+          api-key: ${{ secrets.PMG_PUBLIC_REPOS_TOKEN }}
+          tenant-id: ${{ secrets.PMG_TENANT_ID }}
       - name: "Write label recommendations"
         run: printf '%s\n' "$LABEL_RESULT" >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -108,6 +118,11 @@ jobs:
           ref: main
           persist-credentials: false
 
+      - name: Setup PMG
+        uses: safedep/pmg@v0.34.0
+        with:
+          api-key: ${{ secrets.PMG_PUBLIC_REPOS_TOKEN }}
+          tenant-id: ${{ secrets.PMG_TENANT_ID }}
       - name: "Validate recommended labels"
         id: validate
         run: |
@@ -142,6 +157,11 @@ jobs:
     permissions:
       id-token: write # for the repository label credential broker
     steps:
+      - name: Setup PMG
+        uses: safedep/pmg@v0.34.0
+        with:
+          api-key: ${{ secrets.PMG_PUBLIC_REPOS_TOKEN }}
+          tenant-id: ${{ secrets.PMG_TENANT_ID }}
       - name: "Get repository label token"
         id: token
         uses: open-security-tools/ost-simple-sts@9e012247e07c39080fb6a832dbfbcfeacebc19c4

@@ -28,6 +28,11 @@ jobs:
     env:
       SOURCE_SHA: ${{ github.sha }}
     steps:
+      - name: Setup PMG
+        uses: safedep/pmg@v0.34.0
+        with:
+          api-key: ${{ secrets.PMG_PUBLIC_REPOS_TOKEN }}
+          tenant-id: ${{ secrets.PMG_TENANT_ID }}
       - name: Prepare public history
         env:
           SYNC_REPOSITORY: ${{ runner.temp }}/uv-security-sync.git

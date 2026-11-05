@@ -29,6 +29,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Setup PMG
+        uses: safedep/pmg@v0.34.0
+        with:
+          api-key: ${{ secrets.PMG_PUBLIC_REPOS_TOKEN }}
+          tenant-id: ${{ secrets.PMG_TENANT_ID }}
       - name: "Set branch name"
         run: echo "BRANCH_NAME=update-versions-$VERSION-$(date +%s)" >> $GITHUB_ENV
 
